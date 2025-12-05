@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Vessel Location</title>
     
-    <!-- MapBox GL JS library -->
     <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
     <link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
     
@@ -24,20 +23,9 @@
             white-space: nowrap;
         }
         
-        .vessel-label {
-            border: 2px solid #0078d4;
-            color: #0078d4;
-        }
-        
-        .origin-label {
-            border: 2px solid #27ae60;
-            color: #27ae60;
-        }
-        
-        .destination-label {
-            border: 2px solid #e67e22;
-            color: #e67e22;
-        }
+        .vessel-label { border: 2px solid #0078d4; color: #0078d4; }
+        .origin-label { border: 2px solid #27ae60; color: #27ae60; }
+        .destination-label { border: 2px solid #e67e22; color: #e67e22; }
         
         .map-marker {
             width: 18px;
@@ -56,10 +44,6 @@
     <div id="map"></div>
     
     <script>
-        // =====================================================
-        // CONFIGURATION
-        // =====================================================
-        
         mapboxgl.accessToken = 'pk.eyJ1IjoiY3F1ZWVuczIwMjUiLCJhIjoiY21pOWZzN2ZuMG9hYjJtb3BtNTVpdTM5ZiJ9.AhEHr3C1lTbme_znQswe9w';
         
         // =====================================================
@@ -68,7 +52,6 @@
         
         const params = new URLSearchParams(window.location.search);
         
-        // Vessel coordinates
         const vesselLatRaw = params.get('lat');
         const vesselLngRaw = params.get('lng');
         const hasVesselCoords = vesselLatRaw && vesselLngRaw && vesselLatRaw !== '' && vesselLngRaw !== '';
@@ -77,17 +60,14 @@
         const vesselLng = parseFloat(vesselLngRaw) || null;
         const vesselName = params.get('vessel') || 'Vessel';
         
-        // Origin coordinates
         const originLat = parseFloat(params.get('originLat')) || null;
         const originLng = parseFloat(params.get('originLng')) || null;
         const originName = params.get('origin') || 'Origin';
         
-        // Destination coordinates
         const destLat = parseFloat(params.get('destLat')) || null;
         const destLng = parseFloat(params.get('destLng')) || null;
         const destName = params.get('dest') || 'Destination';
         
-        // Display type
         const displayType = params.get('display') || 'AllThreePoints';
         
         // =====================================================
@@ -98,92 +78,123 @@
         const showOrigin = (displayType === 'AllThreePoints' || displayType === 'VesselAndOrigin') && originLat && originLng;
         const showDest = (displayType === 'AllThreePoints' || displayType === 'VesselAndDestination') && destLat && destLng;
         
-        // =====================================================
-        // COLLECT ALL VISIBLE POINTS
-        // =====================================================
-        
         const points = [];
         if (showVessel) points.push({lng: vesselLng, lat: vesselLat, type: 'vessel'});
         if (showOrigin) points.push({lng: originLng, lat: originLat, type: 'origin'});
         if (showDest) points.push({lng: destLng, lat: destLat, type: 'dest'});
         
         // =====================================================
-        // SMART ROUTE DETECTION - VESSEL POSITION FIRST
+        // ROUTE DETECTION
         // =====================================================
         
-        function isInPacificRegion(lng) {
-            // Pacific region: East Asia (90° to 180°) OR Eastern Pacific (-180° to -100°)
-            // This covers: Asia, Pacific Ocean, US West Coast area
-            return lng >= 90 || lng <= -100;
-        }
-        
-        function isInAtlanticRegion(lng) {
-            // Atlantic/Indian Ocean region: -30° to 90°
-            // This covers: Atlantic, Indian Ocean, Africa, Europe, Middle East
-            return lng > -30 && lng < 90;
+        function isInAtlanticIndianRegion(lng) {
+            // Atlantic, Indian Ocean, Africa, Europe, Middle East: -30° to 90°
+            return lng >= -30 && lng <= 90;
         }
         
         function isTransPacificRoute() {
-            // Check if we have points on both sides of the Pacific
-            const hasAsiaPoint = points.some(p => p.lng >= 90 && p.lng <= 145);
-            const hasAmericasPoint = points.some(p => p.lng >= -130 && p.lng <= -30);
+            const hasAsiaPoint = points.some(p => p.lng >= 90 && p.lng <= 150);
+            const hasAmericasPoint = points.some(p => p.lng >= -140 && p.lng <= -30);
             return hasAsiaPoint && hasAmericasPoint;
         }
         
         function detectRouteType() {
-            // First check: Is this even a trans-oceanic route?
             if (!isTransPacificRoute()) {
-                return 'Atlantic'; // Default view for regional routes
+                return 'Atlantic';
             }
             
-            // PRIORITY: Use vessel position to determine route
-            // This is the most reliable indicator of which way the ship is going
+            // For trans-Pacific routes, check if vessel is in Atlantic/Indian region
             if (showVessel && vesselLng !== null) {
-                // Vessel in Atlantic/Indian Ocean = Suez route
-                if (isInAtlanticRegion(vesselLng)) {
-                    return 'Atlantic';
-                }
-                // Vessel in Pacific region = Pacific route (West Coast OR Panama)
-                if (isInPacificRegion(vesselLng)) {
-                    return 'Pacific';
+                if (isInAtlanticIndianRegion(vesselLng)) {
+                    return 'Atlantic'; // Suez route
                 }
             }
             
-            // Fallback: Default to Pacific for Asia-Americas routes
-            return 'Pacific';
+            return 'Pacific'; // Default for trans-Pacific
         }
         
         const routeType = detectRouteType();
         
         // =====================================================
-        // CALCULATE MAP CENTER BASED ON ROUTE TYPE
+        // CALCULATE VIEW FOR PACIFIC ROUTES
+        // For Pacific routes, we need to shift coordinates
+        // to prevent fitBounds from going "the wrong way"
         // =====================================================
         
-        function getMapCenter() {
+        function shiftLngForPacific(lng) {
+            // Shift Americas coordinates to be > 180
+            // So -120 becomes 240, keeping everything on same "side"
+            return lng < 0 ? lng + 360 : lng;
+        }
+        
+        function getViewParameters() {
             if (points.length === 0) {
-                return [0, 20];
+                return { center: [0, 20], zoom: 2 };
+            }
+            
+            if (points.length === 1) {
+                return { center: [points[0].lng, points[0].lat], zoom: 5 };
             }
             
             if (routeType === 'Pacific') {
-                // Shift longitudes so Pacific is centered
-                const adjustedPoints = points.map(p => ({
-                    lng: p.lng < 0 ? p.lng + 360 : p.lng,
+                // Shift all points to Pacific-centered coordinates
+                const shifted = points.map(p => ({
+                    lng: shiftLngForPacific(p.lng),
                     lat: p.lat
                 }));
                 
-                const avgLng = adjustedPoints.reduce((sum, p) => sum + p.lng, 0) / adjustedPoints.length;
-                const avgLat = adjustedPoints.reduce((sum, p) => sum + p.lat, 0) / adjustedPoints.length;
+                // Calculate bounds in shifted space
+                const lngs = shifted.map(p => p.lng);
+                const lats = shifted.map(p => p.lat);
                 
-                const centerLng = avgLng > 180 ? avgLng - 360 : avgLng;
-                return [centerLng, avgLat];
+                const minLng = Math.min(...lngs);
+                const maxLng = Math.max(...lngs);
+                const minLat = Math.min(...lats);
+                const maxLat = Math.max(...lats);
+                
+                // Calculate center in shifted space
+                const centerLng = (minLng + maxLng) / 2;
+                const centerLat = (minLat + maxLat) / 2;
+                
+                // Convert center back to -180/180 range
+                const finalCenterLng = centerLng > 180 ? centerLng - 360 : centerLng;
+                
+                // Calculate appropriate zoom based on span
+                const lngSpan = maxLng - minLng;
+                const latSpan = maxLat - minLat;
+                const maxSpan = Math.max(lngSpan, latSpan);
+                
+                // Rough zoom calculation (larger span = lower zoom)
+                let zoom = 1;
+                if (maxSpan < 30) zoom = 4;
+                else if (maxSpan < 60) zoom = 3;
+                else if (maxSpan < 120) zoom = 2;
+                else zoom = 1;
+                
+                return { center: [finalCenterLng, centerLat], zoom: zoom };
             } else {
-                const avgLng = points.reduce((sum, p) => sum + p.lng, 0) / points.length;
-                const avgLat = points.reduce((sum, p) => sum + p.lat, 0) / points.length;
-                return [avgLng, avgLat];
+                // Atlantic route - use standard bounds
+                const lngs = points.map(p => p.lng);
+                const lats = points.map(p => p.lat);
+                
+                const centerLng = (Math.min(...lngs) + Math.max(...lngs)) / 2;
+                const centerLat = (Math.min(...lats) + Math.max(...lats)) / 2;
+                
+                const lngSpan = Math.max(...lngs) - Math.min(...lngs);
+                const latSpan = Math.max(...lats) - Math.min(...lats);
+                const maxSpan = Math.max(lngSpan, latSpan);
+                
+                let zoom = 1;
+                if (maxSpan < 30) zoom = 4;
+                else if (maxSpan < 60) zoom = 3;
+                else if (maxSpan < 120) zoom = 2;
+                else zoom = 1;
+                
+                return { center: [centerLng, centerLat], zoom: zoom };
             }
         }
         
-        const mapCenter = getMapCenter();
+        const viewParams = getViewParameters();
         
         // =====================================================
         // CREATE THE MAP
@@ -192,24 +203,10 @@
         const map = new mapboxgl.Map({
             container: 'map',
             style: 'mapbox://styles/mapbox/streets-v12',
-            center: mapCenter,
-            zoom: 2,
+            center: viewParams.center,
+            zoom: viewParams.zoom,
             projection: 'mercator'
         });
-        
-        // Fit map to show all points
-        if (points.length > 1) {
-            const bounds = new mapboxgl.LngLatBounds();
-            points.forEach(p => bounds.extend([p.lng, p.lat]));
-            
-            map.fitBounds(bounds, { 
-                padding: {top: 100, bottom: 100, left: 150, right: 150},
-                maxZoom: 6
-            });
-        } else if (points.length === 1) {
-            map.setCenter([points[0].lng, points[0].lat]);
-            map.setZoom(5);
-        }
         
         map.addControl(new mapboxgl.NavigationControl());
         
