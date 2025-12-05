@@ -10,11 +10,9 @@
     <link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
     
     <style>
-        /* Make map fill the entire browser window */
         body { margin: 0; padding: 0; }
         #map { position: absolute; top: 0; bottom: 0; width: 100%; }
         
-        /* Style for labels */
         .map-label {
             background-color: #ffffff;
             border-radius: 4px;
@@ -26,25 +24,21 @@
             white-space: nowrap;
         }
         
-        /* Vessel label - blue border */
         .vessel-label {
             border: 2px solid #0078d4;
             color: #0078d4;
         }
         
-        /* Origin label - green border */
         .origin-label {
             border: 2px solid #27ae60;
             color: #27ae60;
         }
         
-        /* Destination label - orange border */
         .destination-label {
             border: 2px solid #e67e22;
             color: #e67e22;
         }
         
-        /* Marker dots */
         .map-marker {
             width: 18px;
             height: 18px;
@@ -53,18 +47,12 @@
             box-shadow: 0 2px 6px rgba(0,0,0,0.4);
         }
         
-        /* Vessel marker - blue */
         .vessel-marker { background-color: #0078d4; }
-        
-        /* Origin marker - green */
         .origin-marker { background-color: #27ae60; }
-        
-        /* Destination marker - orange */
         .destination-marker { background-color: #e67e22; }
     </style>
 </head>
 <body>
-    <!-- Map container -->
     <div id="map"></div>
     
     <script>
@@ -80,7 +68,7 @@
         
         const params = new URLSearchParams(window.location.search);
         
-        // Vessel coordinates - check if they're actually provided
+        // Vessel coordinates
         const vesselLatRaw = params.get('lat');
         const vesselLngRaw = params.get('lng');
         const hasVesselCoords = vesselLatRaw && vesselLngRaw && vesselLatRaw !== '' && vesselLngRaw !== '';
@@ -89,21 +77,17 @@
         const vesselLng = parseFloat(vesselLngRaw) || null;
         const vesselName = params.get('vessel') || 'Vessel';
         
-        // Origin coordinates (optional)
-        const originLatRaw = params.get('originLat');
-        const originLngRaw = params.get('originLng');
-        const originLat = parseFloat(originLatRaw) || null;
-        const originLng = parseFloat(originLngRaw) || null;
+        // Origin coordinates
+        const originLat = parseFloat(params.get('originLat')) || null;
+        const originLng = parseFloat(params.get('originLng')) || null;
         const originName = params.get('origin') || 'Origin';
         
-        // Destination coordinates (optional)
-        const destLatRaw = params.get('destLat');
-        const destLngRaw = params.get('destLng');
-        const destLat = parseFloat(destLatRaw) || null;
-        const destLng = parseFloat(destLngRaw) || null;
+        // Destination coordinates
+        const destLat = parseFloat(params.get('destLat')) || null;
+        const destLng = parseFloat(params.get('destLng')) || null;
         const destName = params.get('dest') || 'Destination';
         
-        // Display type: AllThreePoints, VesselAndDestination, VesselAndOrigin
+        // Display type
         const displayType = params.get('display') || 'AllThreePoints';
         
         // =====================================================
@@ -124,46 +108,48 @@
         if (showDest) points.push({lng: destLng, lat: destLat, type: 'dest'});
         
         // =====================================================
-        // SMART ROUTE DETECTION
+        // SMART ROUTE DETECTION - VESSEL POSITION FIRST
         // =====================================================
         
-        function isInAsia(lng) {
-            // East Asia, Southeast Asia: roughly 90°E to 145°E
-            return lng >= 90 && lng <= 145;
-        }
-        
-        function isInAmericas(lng) {
-            // Americas: roughly -130°W to -30°W
-            return lng >= -130 && lng <= -30;
+        function isInPacificRegion(lng) {
+            // Pacific region: East Asia (90° to 180°) OR Eastern Pacific (-180° to -100°)
+            // This covers: Asia, Pacific Ocean, US West Coast area
+            return lng >= 90 || lng <= -100;
         }
         
         function isInAtlanticRegion(lng) {
-            // Atlantic, Indian Ocean, Africa, Europe, Middle East: -30°W to 90°E
-            // This is where a vessel would be if taking the Suez/Africa route
-            return lng >= -30 && lng <= 90;
+            // Atlantic/Indian Ocean region: -30° to 90°
+            // This covers: Atlantic, Indian Ocean, Africa, Europe, Middle East
+            return lng > -30 && lng < 90;
+        }
+        
+        function isTransPacificRoute() {
+            // Check if we have points on both sides of the Pacific
+            const hasAsiaPoint = points.some(p => p.lng >= 90 && p.lng <= 145);
+            const hasAmericasPoint = points.some(p => p.lng >= -130 && p.lng <= -30);
+            return hasAsiaPoint && hasAmericasPoint;
         }
         
         function detectRouteType() {
-            // Check if this is an Asia ↔ Americas route
-            const hasAsiaPoint = points.some(p => isInAsia(p.lng));
-            const hasAmericasPoint = points.some(p => isInAmericas(p.lng));
-            
-            // If not an Asia-Americas route, use default Atlantic-centered view
-            if (!hasAsiaPoint || !hasAmericasPoint) {
-                return 'Atlantic';
+            // First check: Is this even a trans-oceanic route?
+            if (!isTransPacificRoute()) {
+                return 'Atlantic'; // Default view for regional routes
             }
             
-            // This IS an Asia-Americas route
-            // Check if vessel position tells us which way it's going
+            // PRIORITY: Use vessel position to determine route
+            // This is the most reliable indicator of which way the ship is going
             if (showVessel && vesselLng !== null) {
-                // If vessel is in Atlantic/Indian Ocean/Africa region → Atlantic route
+                // Vessel in Atlantic/Indian Ocean = Suez route
                 if (isInAtlanticRegion(vesselLng)) {
                     return 'Atlantic';
                 }
+                // Vessel in Pacific region = Pacific route (West Coast OR Panama)
+                if (isInPacificRegion(vesselLng)) {
+                    return 'Pacific';
+                }
             }
             
-            // Default: Pacific route for Asia-Americas
-            // (Most common, and works when vessel position is unknown)
+            // Fallback: Default to Pacific for Asia-Americas routes
             return 'Pacific';
         }
         
@@ -175,12 +161,11 @@
         
         function getMapCenter() {
             if (points.length === 0) {
-                return [0, 20]; // Default center
+                return [0, 20];
             }
             
             if (routeType === 'Pacific') {
                 // Shift longitudes so Pacific is centered
-                // Convert negative (Americas) longitudes to >180
                 const adjustedPoints = points.map(p => ({
                     lng: p.lng < 0 ? p.lng + 360 : p.lng,
                     lat: p.lat
@@ -189,11 +174,9 @@
                 const avgLng = adjustedPoints.reduce((sum, p) => sum + p.lng, 0) / adjustedPoints.length;
                 const avgLat = adjustedPoints.reduce((sum, p) => sum + p.lat, 0) / adjustedPoints.length;
                 
-                // Convert back to standard -180 to 180 range
                 const centerLng = avgLng > 180 ? avgLng - 360 : avgLng;
                 return [centerLng, avgLat];
             } else {
-                // Standard Atlantic-centered average
                 const avgLng = points.reduce((sum, p) => sum + p.lng, 0) / points.length;
                 const avgLat = points.reduce((sum, p) => sum + p.lat, 0) / points.length;
                 return [avgLng, avgLat];
@@ -214,7 +197,7 @@
             projection: 'mercator'
         });
         
-        // Fit map to show all points with generous padding for labels
+        // Fit map to show all points
         if (points.length > 1) {
             const bounds = new mapboxgl.LngLatBounds();
             points.forEach(p => bounds.extend([p.lng, p.lat]));
@@ -228,37 +211,28 @@
             map.setZoom(5);
         }
         
-        // Add zoom controls
         map.addControl(new mapboxgl.NavigationControl());
-        
-        // =====================================================
-        // HELPER FUNCTION TO ADD MARKERS
-        // =====================================================
-        
-        function addMarker(lng, lat, name, markerClass, labelClass) {
-            // Create marker dot
-            const markerEl = document.createElement('div');
-            markerEl.className = 'map-marker ' + markerClass;
-            
-            // Create label
-            const labelEl = document.createElement('div');
-            labelEl.className = 'map-label ' + labelClass;
-            labelEl.textContent = name;
-            
-            // Add marker to map
-            new mapboxgl.Marker(markerEl)
-                .setLngLat([lng, lat])
-                .addTo(map);
-            
-            // Add label above marker
-            new mapboxgl.Marker(labelEl, { offset: [0, -25] })
-                .setLngLat([lng, lat])
-                .addTo(map);
-        }
         
         // =====================================================
         // ADD MARKERS
         // =====================================================
+        
+        function addMarker(lng, lat, name, markerClass, labelClass) {
+            const markerEl = document.createElement('div');
+            markerEl.className = 'map-marker ' + markerClass;
+            
+            const labelEl = document.createElement('div');
+            labelEl.className = 'map-label ' + labelClass;
+            labelEl.textContent = name;
+            
+            new mapboxgl.Marker(markerEl)
+                .setLngLat([lng, lat])
+                .addTo(map);
+            
+            new mapboxgl.Marker(labelEl, { offset: [0, -25] })
+                .setLngLat([lng, lat])
+                .addTo(map);
+        }
         
         if (showVessel) {
             addMarker(vesselLng, vesselLat, vesselName, 'vessel-marker', 'vessel-label');
@@ -272,7 +246,6 @@
             addMarker(destLng, destLat, destName, 'destination-marker', 'destination-label');
         }
         
-        // Update page title
         document.title = vesselName + ' - Vessel Tracking';
     </script>
 </body>
