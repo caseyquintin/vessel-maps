@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Vessel Location</title>
+    
+    <!-- MapBox GL JS library -->
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
+    
+    <style>
+        /* Make map fill the entire browser window */
+        body { margin: 0; padding: 0; }
+        #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+        
+        /* Style for the vessel name label */
+        .vessel-label {
+            background-color: #ffffff;
+            border: 2px solid #0078d4;
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            font-weight: bold;
+            color: #333;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        }
+        
+        /* Style for the marker dot */
+        .vessel-marker {
+            width: 20px;
+            height: 20px;
+            background-color: #e74c3c;
+            border: 3px solid #ffffff;
+            border-radius: 50%;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+        }
+    </style>
+</head>
+<body>
+    <!-- Map container -->
+    <div id="map"></div>
+    
+    <script>
+        // =====================================================
+        // CONFIGURATION
+        // =====================================================
+        
+        // Your MapBox access token
+        mapboxgl.accessToken = 'pk.eyJ1IjoiY3F1ZWVuczIwMjUiLCJhIjoiY21pOWZzN2ZuMG9hYjJtb3BtNTVpdTM5ZiJ9.AhEHr3C1lTbme_znQswe9w';
+        
+        // =====================================================
+        // GET PARAMETERS FROM URL
+        // Example URL: vesselmap.html?lat=29.123&lng=-95.456&vessel=Atlantic%20Pioneer
+        // =====================================================
+        
+        const params = new URLSearchParams(window.location.search);
+        const lat = parseFloat(params.get('lat')) || 0;      // Latitude from URL
+        const lng = parseFloat(params.get('lng')) || 0;      // Longitude from URL
+        const vesselName = params.get('vessel') || 'Vessel'; // Vessel name from URL
+        
+        // =====================================================
+        // CREATE THE MAP
+        // =====================================================
+        
+        const map = new mapboxgl.Map({
+            container: 'map',                    // HTML element ID
+            style: 'mapbox://styles/mapbox/streets-v12',  // Map style
+            center: [lng, lat],                  // Starting position [lng, lat]
+            zoom: 10                             // Starting zoom level
+        });
+        
+        // Add zoom and rotation controls to the map
+        map.addControl(new mapboxgl.NavigationControl());
+        
+        // =====================================================
+        // CREATE THE MARKER WITH LABEL
+        // =====================================================
+        
+        // Create the red dot marker element
+        const markerElement = document.createElement('div');
+        markerElement.className = 'vessel-marker';
+        
+        // Create the label element
+        const labelElement = document.createElement('div');
+        labelElement.className = 'vessel-label';
+        labelElement.textContent = vesselName;
+        
+        // Add the marker to the map
+        new mapboxgl.Marker(markerElement)
+            .setLngLat([lng, lat])
+            .addTo(map);
+        
+        // Add the label to the map (positioned above the marker)
+        new mapboxgl.Marker(labelElement, { offset: [0, -30] })
+            .setLngLat([lng, lat])
+            .addTo(map);
+        
+        // Update the page title with the vessel name
+        document.title = vesselName + ' - Vessel Location';
+    </script>
+</body>
+</html>
