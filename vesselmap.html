@@ -210,22 +210,22 @@
             container: 'map',
             style: 'mapbox://styles/mapbox/streets-v12',
             center: mapCenter,
-            zoom: 3,
+            zoom: 2,
             projection: 'mercator'
         });
         
-        // Fit map to show all points
+        // Fit map to show all points with generous padding for labels
         if (points.length > 1) {
             const bounds = new mapboxgl.LngLatBounds();
             points.forEach(p => bounds.extend([p.lng, p.lat]));
             
             map.fitBounds(bounds, { 
-                padding: 100, 
-                maxZoom: 8
+                padding: {top: 100, bottom: 100, left: 150, right: 150},
+                maxZoom: 6
             });
         } else if (points.length === 1) {
             map.setCenter([points[0].lng, points[0].lat]);
-            map.setZoom(6);
+            map.setZoom(5);
         }
         
         // Add zoom controls
