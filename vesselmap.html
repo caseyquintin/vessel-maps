@@ -120,14 +120,15 @@
         points.forEach(point => bounds.extend(point));
         
         // =====================================================
-        // CREATE THE MAP
+        // CREATE THE MAP (FLAT PROJECTION)
         // =====================================================
         
         const map = new mapboxgl.Map({
             container: 'map',
             style: 'mapbox://styles/mapbox/streets-v12',
             center: [vesselLng, vesselLat],
-            zoom: 6
+            zoom: 6,
+            projection: 'mercator'  // Flat map instead of globe
         });
         
         // Fit map to show all points with padding
