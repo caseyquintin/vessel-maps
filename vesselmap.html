@@ -88,7 +88,6 @@
         // =====================================================
         
         function isInAtlanticIndianRegion(lng) {
-            // Atlantic, Indian Ocean, Africa, Europe, Middle East: -30° to 90°
             return lng >= -30 && lng <= 90;
         }
         
@@ -103,33 +102,28 @@
                 return 'Atlantic';
             }
             
-            // For trans-Pacific routes, check if vessel is in Atlantic/Indian region
             if (showVessel && vesselLng !== null) {
                 if (isInAtlanticIndianRegion(vesselLng)) {
-                    return 'Atlantic'; // Suez route
+                    return 'Atlantic';
                 }
             }
             
-            return 'Pacific'; // Default for trans-Pacific
+            return 'Pacific';
         }
         
         const routeType = detectRouteType();
         
         // =====================================================
-        // CALCULATE VIEW FOR PACIFIC ROUTES
-        // For Pacific routes, we need to shift coordinates
-        // to prevent fitBounds from going "the wrong way"
+        // CALCULATE VIEW PARAMETERS
         // =====================================================
         
         function shiftLngForPacific(lng) {
-            // Shift Americas coordinates to be > 180
-            // So -120 becomes 240, keeping everything on same "side"
             return lng < 0 ? lng + 360 : lng;
         }
         
         function getViewParameters() {
             if (points.length === 0) {
-                return { center: [0, 20], zoom: 2 };
+                return { center: [150, 20], zoom: 2 };
             }
             
             if (points.length === 1) {
@@ -137,13 +131,12 @@
             }
             
             if (routeType === 'Pacific') {
-                // Shift all points to Pacific-centered coordinates
+                // Shift coordinates for Pacific-centered view
                 const shifted = points.map(p => ({
                     lng: shiftLngForPacific(p.lng),
                     lat: p.lat
                 }));
                 
-                // Calculate bounds in shifted space
                 const lngs = shifted.map(p => p.lng);
                 const lats = shifted.map(p => p.lat);
                 
@@ -152,28 +145,18 @@
                 const minLat = Math.min(...lats);
                 const maxLat = Math.max(...lats);
                 
-                // Calculate center in shifted space
+                // Center in shifted space
                 const centerLng = (minLng + maxLng) / 2;
                 const centerLat = (minLat + maxLat) / 2;
                 
-                // Convert center back to -180/180 range
+                // Convert back to -180/180
                 const finalCenterLng = centerLng > 180 ? centerLng - 360 : centerLng;
                 
-                // Calculate appropriate zoom based on span
-                const lngSpan = maxLng - minLng;
-                const latSpan = maxLat - minLat;
-                const maxSpan = Math.max(lngSpan, latSpan);
-                
-                // Rough zoom calculation (larger span = lower zoom)
-                let zoom = 1;
-                if (maxSpan < 30) zoom = 4;
-                else if (maxSpan < 60) zoom = 3;
-                else if (maxSpan < 120) zoom = 2;
-                else zoom = 1;
-                
-                return { center: [finalCenterLng, centerLat], zoom: zoom };
+                // Calculate zoom - Pacific routes are typically wide
+                // Use zoom 2 for most trans-Pacific routes
+                return { center: [finalCenterLng, centerLat], zoom: 2 };
             } else {
-                // Atlantic route - use standard bounds
+                // Atlantic route
                 const lngs = points.map(p => p.lng);
                 const lats = points.map(p => p.lat);
                 
@@ -184,11 +167,10 @@
                 const latSpan = Math.max(...lats) - Math.min(...lats);
                 const maxSpan = Math.max(lngSpan, latSpan);
                 
-                let zoom = 1;
-                if (maxSpan < 30) zoom = 4;
-                else if (maxSpan < 60) zoom = 3;
-                else if (maxSpan < 120) zoom = 2;
-                else zoom = 1;
+                let zoom = 2;
+                if (maxSpan < 20) zoom = 5;
+                else if (maxSpan < 40) zoom = 4;
+                else if (maxSpan < 80) zoom = 3;
                 
                 return { center: [centerLng, centerLat], zoom: zoom };
             }
@@ -205,8 +187,15 @@
             style: 'mapbox://styles/mapbox/streets-v12',
             center: viewParams.center,
             zoom: viewParams.zoom,
-            projection: 'mercator'
+            projection: 'mercator',
+            minZoom: 1.5,  // Prevent zooming out too far
+            maxBounds: null
         });
+        
+        // For Pacific routes, use renderWorldCopies false to prevent duplicate worlds
+        if (routeType === 'Pacific') {
+            map.setRenderWorldCopies(false);
+        }
         
         map.addControl(new mapboxgl.NavigationControl());
         
