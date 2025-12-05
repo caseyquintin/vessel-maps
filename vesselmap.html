@@ -107,33 +107,110 @@
         const showDest = (displayType === 'AllThreePoints' || displayType === 'VesselAndDestination') && destLat && destLng;
         
         // =====================================================
-        // CALCULATE MAP BOUNDS TO FIT ALL POINTS
+        // COLLECT ALL VISIBLE POINTS
         // =====================================================
         
-        // Collect all visible points
-        const points = [[vesselLng, vesselLat]];
-        if (showOrigin) points.push([originLng, originLat]);
-        if (showDest) points.push([destLng, destLat]);
-        
-        // Calculate bounds
-        const bounds = new mapboxgl.LngLatBounds();
-        points.forEach(point => bounds.extend(point));
+        const points = [{lng: vesselLng, lat: vesselLat}];
+        if (showOrigin) points.push({lng: originLng, lat: originLat});
+        if (showDest) points.push({lng: destLng, lat: destLat});
         
         // =====================================================
-        // CREATE THE MAP (FLAT PROJECTION)
+        // DETECT IF ROUTE CROSSES THE PACIFIC
+        // (Points in both East Asia and Americas)
+        // =====================================================
+        
+        function isPacificRoute(points) {
+            // Check if we have points on both sides of the Pacific
+            const hasAsiaPoint = points.some(p => p.lng > 90 || p.lng < -150);
+            const hasAmericasPoint = points.some(p => p.lng > -140 && p.lng < -30);
+            return hasAsiaPoint && hasAmericasPoint;
+        }
+        
+        // Adjust longitude for Pacific-centered view
+        // Shifts coordinates so Pacific Ocean is in the center
+        function adjustLngForPacific(lng) {
+            // Shift negative longitudes (Americas) to positive values
+            // So -120 (California) becomes 240, placing it "east" of Asia
+            return lng < 0 ? lng + 360 : lng;
+        }
+        
+        // =====================================================
+        // CALCULATE MAP CENTER AND BOUNDS
+        // =====================================================
+        
+        let mapCenter;
+        let mapBounds;
+        const crossesPacific = isPacificRoute(points);
+        
+        if (crossesPacific && points.length > 1) {
+            // For Pacific routes, calculate center using adjusted coordinates
+            const adjustedPoints = points.map(p => ({
+                lng: adjustLngForPacific(p.lng),
+                lat: p.lat
+            }));
+            
+            // Calculate average center
+            const avgLng = adjustedPoints.reduce((sum, p) => sum + p.lng, 0) / adjustedPoints.length;
+            const avgLat = adjustedPoints.reduce((sum, p) => sum + p.lat, 0) / adjustedPoints.length;
+            
+            // Convert back to standard longitude (-180 to 180)
+            const centerLng = avgLng > 180 ? avgLng - 360 : avgLng;
+            mapCenter = [centerLng, avgLat];
+            
+            // Calculate bounds with adjusted coordinates
+            const lngs = adjustedPoints.map(p => p.lng);
+            const lats = points.map(p => p.lat);
+            
+            const minLng = Math.min(...lngs);
+            const maxLng = Math.max(...lngs);
+            const minLat = Math.min(...lats);
+            const maxLat = Math.max(...lats);
+            
+            // Convert bounds back to standard coordinates
+            mapBounds = [
+                [minLng > 180 ? minLng - 360 : minLng, minLat],
+                [maxLng > 180 ? maxLng - 360 : maxLng, maxLat]
+            ];
+        } else {
+            // Standard bounds calculation for non-Pacific routes
+            mapCenter = [vesselLng, vesselLat];
+            mapBounds = new mapboxgl.LngLatBounds();
+            points.forEach(p => mapBounds.extend([p.lng, p.lat]));
+        }
+        
+        // =====================================================
+        // CREATE THE MAP (FLAT PROJECTION, PACIFIC-CENTERED)
         // =====================================================
         
         const map = new mapboxgl.Map({
             container: 'map',
             style: 'mapbox://styles/mapbox/streets-v12',
-            center: [vesselLng, vesselLat],
-            zoom: 6,
-            projection: 'mercator'  // Flat map instead of globe
+            center: mapCenter,
+            zoom: 2,
+            projection: 'mercator'
         });
         
         // Fit map to show all points with padding
         if (points.length > 1) {
-            map.fitBounds(bounds, { padding: 80, maxZoom: 10 });
+            if (crossesPacific) {
+                // For Pacific routes, use calculated center and zoom
+                map.setCenter(mapCenter);
+                map.setZoom(2); // Start zoomed out, then fit
+                
+                // Use fitBounds but allow it to cross the antimeridian
+                const bounds = new mapboxgl.LngLatBounds();
+                points.forEach(p => bounds.extend([p.lng, p.lat]));
+                
+                // Fit with extra padding and let MapBox handle it
+                map.fitBounds(bounds, { 
+                    padding: 80, 
+                    maxZoom: 8,
+                    // This tells MapBox to consider the shorter Pacific route
+                    center: mapCenter
+                });
+            } else {
+                map.fitBounds(mapBounds, { padding: 80, maxZoom: 10 });
+            }
         }
         
         // Add zoom controls
