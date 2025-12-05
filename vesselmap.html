@@ -14,28 +14,53 @@
         body { margin: 0; padding: 0; }
         #map { position: absolute; top: 0; bottom: 0; width: 100%; }
         
-        /* Style for the vessel name label */
-        .vessel-label {
+        /* Style for labels */
+        .map-label {
             background-color: #ffffff;
-            border: 2px solid #0078d4;
             border-radius: 4px;
             padding: 4px 8px;
             font-family: Arial, sans-serif;
-            font-size: 14px;
+            font-size: 12px;
             font-weight: bold;
-            color: #333;
             box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            white-space: nowrap;
         }
         
-        /* Style for the marker dot */
-        .vessel-marker {
-            width: 20px;
-            height: 20px;
-            background-color: #e74c3c;
+        /* Vessel label - blue border */
+        .vessel-label {
+            border: 2px solid #0078d4;
+            color: #0078d4;
+        }
+        
+        /* Origin label - green border */
+        .origin-label {
+            border: 2px solid #27ae60;
+            color: #27ae60;
+        }
+        
+        /* Destination label - orange border */
+        .destination-label {
+            border: 2px solid #e67e22;
+            color: #e67e22;
+        }
+        
+        /* Marker dots */
+        .map-marker {
+            width: 18px;
+            height: 18px;
             border: 3px solid #ffffff;
             border-radius: 50%;
             box-shadow: 0 2px 6px rgba(0,0,0,0.4);
         }
+        
+        /* Vessel marker - blue */
+        .vessel-marker { background-color: #0078d4; }
+        
+        /* Origin marker - green */
+        .origin-marker { background-color: #27ae60; }
+        
+        /* Destination marker - orange */
+        .destination-marker { background-color: #e67e22; }
     </style>
 </head>
 <body>
@@ -47,60 +72,116 @@
         // CONFIGURATION
         // =====================================================
         
-        // Your MapBox access token
         mapboxgl.accessToken = 'pk.eyJ1IjoiY3F1ZWVuczIwMjUiLCJhIjoiY21pOWZzN2ZuMG9hYjJtb3BtNTVpdTM5ZiJ9.AhEHr3C1lTbme_znQswe9w';
         
         // =====================================================
         // GET PARAMETERS FROM URL
-        // Example URL: vesselmap.html?lat=29.123&lng=-95.456&vessel=Atlantic%20Pioneer
         // =====================================================
         
         const params = new URLSearchParams(window.location.search);
-        const lat = parseFloat(params.get('lat')) || 0;      // Latitude from URL
-        const lng = parseFloat(params.get('lng')) || 0;      // Longitude from URL
-        const vesselName = params.get('vessel') || 'Vessel'; // Vessel name from URL
+        
+        // Vessel coordinates (required)
+        const vesselLat = parseFloat(params.get('lat')) || 0;
+        const vesselLng = parseFloat(params.get('lng')) || 0;
+        const vesselName = params.get('vessel') || 'Vessel';
+        
+        // Origin coordinates (optional)
+        const originLat = parseFloat(params.get('originLat')) || null;
+        const originLng = parseFloat(params.get('originLng')) || null;
+        const originName = params.get('origin') || 'Origin';
+        
+        // Destination coordinates (optional)
+        const destLat = parseFloat(params.get('destLat')) || null;
+        const destLng = parseFloat(params.get('destLng')) || null;
+        const destName = params.get('dest') || 'Destination';
+        
+        // Display type: AllThreePoints, VesselAndDestination, VesselAndOrigin
+        const displayType = params.get('display') || 'AllThreePoints';
+        
+        // =====================================================
+        // DETERMINE WHICH POINTS TO SHOW
+        // =====================================================
+        
+        const showVessel = true; // Always show vessel
+        const showOrigin = (displayType === 'AllThreePoints' || displayType === 'VesselAndOrigin') && originLat && originLng;
+        const showDest = (displayType === 'AllThreePoints' || displayType === 'VesselAndDestination') && destLat && destLng;
+        
+        // =====================================================
+        // CALCULATE MAP BOUNDS TO FIT ALL POINTS
+        // =====================================================
+        
+        // Collect all visible points
+        const points = [[vesselLng, vesselLat]];
+        if (showOrigin) points.push([originLng, originLat]);
+        if (showDest) points.push([destLng, destLat]);
+        
+        // Calculate bounds
+        const bounds = new mapboxgl.LngLatBounds();
+        points.forEach(point => bounds.extend(point));
         
         // =====================================================
         // CREATE THE MAP
         // =====================================================
         
         const map = new mapboxgl.Map({
-            container: 'map',                    // HTML element ID
-            style: 'mapbox://styles/mapbox/streets-v12',  // Map style
-            center: [lng, lat],                  // Starting position [lng, lat]
-            zoom: 3                             // Starting zoom level
+            container: 'map',
+            style: 'mapbox://styles/mapbox/streets-v12',
+            center: [vesselLng, vesselLat],
+            zoom: 6
         });
         
-        // Add zoom and rotation controls to the map
+        // Fit map to show all points with padding
+        if (points.length > 1) {
+            map.fitBounds(bounds, { padding: 80, maxZoom: 10 });
+        }
+        
+        // Add zoom controls
         map.addControl(new mapboxgl.NavigationControl());
         
         // =====================================================
-        // CREATE THE MARKER WITH LABEL
+        // HELPER FUNCTION TO ADD MARKERS
         // =====================================================
         
-        // Create the red dot marker element
-        const markerElement = document.createElement('div');
-        markerElement.className = 'vessel-marker';
+        function addMarker(lng, lat, name, markerClass, labelClass) {
+            // Create marker dot
+            const markerEl = document.createElement('div');
+            markerEl.className = 'map-marker ' + markerClass;
+            
+            // Create label
+            const labelEl = document.createElement('div');
+            labelEl.className = 'map-label ' + labelClass;
+            labelEl.textContent = name;
+            
+            // Add marker to map
+            new mapboxgl.Marker(markerEl)
+                .setLngLat([lng, lat])
+                .addTo(map);
+            
+            // Add label above marker
+            new mapboxgl.Marker(labelEl, { offset: [0, -25] })
+                .setLngLat([lng, lat])
+                .addTo(map);
+        }
         
-        // Create the label element
-        const labelElement = document.createElement('div');
-        labelElement.className = 'vessel-label';
-        labelElement.textContent = vesselName;
+        // =====================================================
+        // ADD MARKERS BASED ON DISPLAY TYPE
+        // =====================================================
         
-        // Add the marker to the map
-        new mapboxgl.Marker(markerElement)
-            .setLngLat([lng, lat])
-            .addTo(map);
+        // Always add vessel marker
+        addMarker(vesselLng, vesselLat, vesselName, 'vessel-marker', 'vessel-label');
         
-        // Add the label to the map (positioned above the marker)
-        new mapboxgl.Marker(labelElement, { offset: [0, -30] })
-            .setLngLat([lng, lat])
-            .addTo(map);
+        // Add origin if applicable
+        if (showOrigin) {
+            addMarker(originLng, originLat, originName, 'origin-marker', 'origin-label');
+        }
         
-        // Update the page title with the vessel name
-        document.title = vesselName + ' - Vessel Location';
+        // Add destination if applicable
+        if (showDest) {
+            addMarker(destLng, destLat, destName, 'destination-marker', 'destination-label');
+        }
+        
+        // Update page title
+        document.title = vesselName + ' - Vessel Tracking';
     </script>
 </body>
-
 </html>
-
